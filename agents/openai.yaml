@@ -1,0 +1,4 @@
+interface:
+  display_name: "仓库同步到飞书知识库"
+  short_description: "将 GitHub 或本地仓库可靠转换并持续同步为飞书知识库"
+  default_prompt: "使用 $repo-to-feishu-wiki 将这个仓库转换并持续同步到飞书知识库。"
