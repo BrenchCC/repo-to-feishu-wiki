@@ -1,126 +1,126 @@
 ---
 name: repo-to-feishu-wiki
-description: 将 GitHub 或本地仓库中的 Markdown、VitePress、Quarto 等内容转换为有目录、内部跳转、图片、公式和 Mermaid 的飞书知识库，并支持一次性导入、增量镜像、定时同步、重命名复用、删除归档、断点恢复、GitHub Actions 与远端验收。用户提出“把仓库变成飞书知识库”“仓库同步到飞书”“Markdown 导入飞书 Wiki”“建立 GitHub 到飞书的自动更新”“修复仓库到飞书同步器”时使用。
+description: Convert Markdown, VitePress, and Quarto content from GitHub or local repositories into Feishu Wiki spaces with navigation, internal links, images, formulas, and Mermaid diagrams. Support one-time imports, incremental mirrors, scheduled synchronization, node reuse across renames, deletion archiving, crash recovery, GitHub Actions, and remote acceptance checks. Use for repository-to-Feishu migrations or mirrors, Markdown imports, GitHub-to-Feishu automation, debugging an existing repository-to-Feishu synchronizer, and equivalent requests in English or Chinese.
 ---
 
-# Repository To Feishu Wiki
+# Repository to Feishu Wiki
 
-把仓库内容建模为受管 Wiki 树，并以可验证、可恢复、默认不破坏未知内容的方式写入飞书。优先复用仓库现有语言和测试框架；不要为单次任务引入第二套运行时。
+Model repository content as a managed Wiki tree, then write it to Feishu in a verifiable, recoverable way that preserves unknown content by default. Reuse the repository's existing language and test framework; do not introduce a second runtime for a one-off task.
 
-## 先加载当前操作规范
+## Load Current Operational Guidance
 
-在执行对应阶段前，读取当前安装版本的相关 Skill，不要把本 Skill 中的概念说明当作永远有效的 CLI 参数文档：
+Read the current installed version of each relevant skill before entering that stage. Treat this skill as orchestration guidance, not as a permanent source of CLI flags:
 
-- 认证、身份、scope 与错误信封：`lark-shared`
-- 知识空间、成员与 Wiki 节点：`lark-wiki`
-- Docx 正文读取和覆盖：`lark-doc`
-- 标题、资源、权限与 token 检视：`lark-drive`
-- GitHub 仓库、Actions、Secrets 或 PR：可用时读取 `github:github`
+- Authentication, identity, scopes, and error envelopes: `lark-shared`
+- Wiki spaces, members, and nodes: `lark-wiki`
+- Docx content reads and overwrites: `lark-doc`
+- Titles, resources, permissions, and token inspection: `lark-drive`
+- GitHub repositories, Actions, Secrets, or pull requests: `github:github`, when available
 
-优先使用当前 Skill 推荐的 shortcut。只有 shortcut 缺失必要能力时才调用原生 API，并在调用前查询 `lark-cli schema`；不要猜字段。
+Prefer the shortcuts recommended by those skills. Use a raw API only when a shortcut lacks required behavior, and inspect `lark-cli schema` before calling it. Never guess request fields.
 
-## 先定义成功标准
+## Define Success First
 
-在实现前明确并记录以下决策：
+Record these decisions before implementation:
 
-1. 选择同步模式：一次性快照、持续单向镜像或接管已有知识库。
-2. 指定唯一真源；持续镜像默认以仓库目标分支为唯一真源，并提示飞书人工正文会被覆盖。
-3. 指定内容范围、目标私有空间、根节点、语言树、调度方式和删除策略。
-4. 分别统计源页面、合成目录节点、状态/归档辅助节点；不要把 Wiki 节点总数误报为源文件数。
-5. 明确验收证据：页面数、目录层级、内部链接、图片/公式/图表、权限、无变化重跑和 CI 运行结果。
+1. Choose one mode: one-time snapshot, continuous one-way mirror, or adoption of an existing Wiki.
+2. Define the single source of truth. For a continuous mirror, default to the repository's target branch and warn that manual Feishu body edits will be overwritten.
+3. Define content scope, target private space, managed root, language tree, schedule, and deletion policy.
+4. Count source pages, synthetic directory nodes, and status/archive helper nodes separately. Do not report total Wiki nodes as the source-file count.
+5. Define acceptance evidence: page count, hierarchy, internal links, media, formulas, diagrams, permissions, no-op reruns, and CI results.
 
-默认采用私有知识空间、删除转归档、串行写入、先预览后应用。若用户只要求方案或诊断，不执行远端写入。
+Default to a private space, archive-on-delete, serial writes, and preview-before-apply. If the user requests only a plan or diagnosis, do not perform remote writes.
 
-## 工作流
+## Workflow
 
-### 1. 只读审计仓库与远端条件
+### 1. Audit the Repository and Remote Preconditions
 
-- 读取仓库内 `AGENTS.md` 等项目指令，检查工作区状态并保留用户已有修改。
-- 使用 Git 跟踪清单确定真实内容范围；识别 Markdown/QMD、frontmatter、目录首页、本地资源、站内链接、公式、Mermaid 和框架专用容器。
-- 选取能覆盖深层目录、图片、SVG、表格、公式、图表、特殊容器和多语言链接的代表页面。
-- 统计失效本地资源与失效站内链接；先报告源仓库问题，再决定修复源文件还是仅在转换层降级。
-- 当任务包含真实飞书写入时，检查 `lark-cli` 可用版本、所需身份和目标资源可见性。区分缺少 scope 与缺少目标空间 ACL；不要通过静默切换身份绕过错误。
-- 当任务包含 CI 时，检查 GitHub 登录、目标分支、现有工作流和 Secret/Variable 名称。只验证敏感值是否非空，绝不打印值。
+- Read repository instructions such as `AGENTS.md`, inspect worktree state, and preserve existing user changes.
+- Use the Git-tracked file list to determine content scope. Identify Markdown/QMD files, frontmatter, directory indexes, local assets, internal links, formulas, Mermaid blocks, and framework-specific containers.
+- Select representative pages covering deep paths, images, SVG, tables, formulas, diagrams, special containers, and multilingual links.
+- Count broken local assets and internal links. Report source defects before deciding whether to fix the source or degrade only in the conversion layer.
+- When real Feishu writes are in scope, inspect the usable `lark-cli` version, required identity, and target visibility. Distinguish missing application scopes from missing target-space ACLs. Never switch identity silently to bypass an error.
+- When CI is in scope, inspect GitHub authentication, the target branch, existing workflows, and Secret/Variable names. Check only whether sensitive values are non-empty; never print their values.
 
-### 2. 选择最小架构
+### 2. Choose the Smallest Architecture
 
-- 一次性快照：使用本地状态文件记录路径、token、导入和验收进度；拆成 `prepare → nodes → content → verify`，允许安全续跑。
-- 持续镜像：实现版本化远端清单、只读计划、写入应用、内容与资源哈希、重命名检测、归档和断点恢复。读取 [sync-design.md](references/sync-design.md) 后再实现。
-- 接管已有知识库：先完整发现目标树并输出冲突计划。禁止仅凭同名标题认领节点；只有清单 token、显式映射或可证明的中断检查点才能建立所有权。
+- One-time snapshot: record path, token, import, and verification progress in a local state file. Separate `prepare -> nodes -> content -> verify` so the run can resume safely.
+- Continuous mirror: implement a versioned remote manifest, read-only plan, apply mode, content-plus-asset hashes, rename detection, archiving, and crash recovery. Read [sync-design.md](references/sync-design.md) before implementation.
+- Existing Wiki adoption: discover the entire target tree and output a conflict plan first. Never claim a node by title alone; require manifest tokens, an explicit mapping, or a provable interrupted-create checkpoint.
 
-导入已有知识空间时，优先在明确的独立根节点下管理镜像；根节点外的人工内容一律视为未知且不受管。
+When importing into an existing space, prefer a dedicated managed root. Treat all content outside that root as unknown and unmanaged.
 
-对超过 20 个页面的一次性任务，保留快照模式，但必须使用可续跑状态和程序化全量验收。只有需要 CI、增量更新、重命名同步或删除/归档时，才采用持续镜像的远端清单设计。
+For a one-time import above 20 pages, keep snapshot mode but require resumable state and programmatic full verification. Use the continuous-mirror manifest only when CI, incremental updates, rename synchronization, or deletion/archive behavior is required.
 
-### 3. 建立稳定内容模型
+### 3. Build a Stable Content Model
 
-- 使用规范化仓库相对路径作为稳定键；不要使用标题作为主键。
-- 标题依次取 frontmatter `title`、首个 H1、可读化文件名，并移除链接、强调符号、HTML 和多余空白。
-- 将目录 `index.md` 映射为目录主页；没有首页但需要承载子页的目录创建合成节点。
-- 明确根首页、语言根、普通页面、合成目录、状态页和归档页的不同类型。
-- 先创建或解析完整 Wiki 节点树，获得全部 `node_token`/`obj_token`，再转换正文和重写内部链接。
-- 分别保存源路径、稳定键、父键、标题和飞书 token，避免路径移动或标题变化制造重复页面。
+- Use normalized repository-relative paths as stable keys. Never use titles as primary keys.
+- Derive titles from frontmatter `title`, then the first H1, then a humanized filename. Strip links, emphasis markers, HTML, and excess whitespace.
+- Map a directory `index.md` to its directory homepage. Create a synthetic directory node when a directory needs to hold children but has no index.
+- Distinguish the root homepage, language roots, regular pages, synthetic directories, status pages, and archive pages.
+- Create or resolve the complete Wiki tree and obtain every `node_token` and `obj_token` before transforming bodies or rewriting internal links.
+- Store source path, stable key, parent key, title, and Feishu tokens separately so moves and title changes do not create duplicate pages.
 
-### 4. 转换内容
+### 4. Transform Content
 
-按以下顺序处理，先保护代码围栏，避免正则误改代码内容：
+Protect fenced code blocks before applying transformations so regex-based rewrites cannot corrupt code:
 
-1. 移除 frontmatter 和与 Wiki 标题重复的首个 H1。
-2. 转换 VitePress/Quarto 的 Badge、callout、details 等专用语法。
-3. 将站内链接解析为稳定键，再改写为 Wiki 节点链接；无法保留的标题锚点降级为页面链接并写入报告。
-4. 校验本地图片存在，纳入资源哈希，并按当前 `lark-doc`/`lark-drive` 规范写成相对 `@./...` 资源路径。
-5. 将 Mermaid 转为飞书支持的原生画板输入；将公式转换为飞书支持的数学块；必要时先把 SVG 转为受支持的位图格式。
-6. 转义 XML/HTML 敏感字符，同时保持代码块和公式原义。
-7. 为持续镜像页面加入只读提示、源文件链接和源提交信息。
+1. Remove frontmatter and the first H1 when it duplicates the Wiki title.
+2. Convert VitePress or Quarto Badge, callout, container, and details syntax.
+3. Resolve internal links to stable keys, then rewrite them to Wiki node links. Degrade unsupported heading anchors to page links and record warnings.
+4. Verify local images, include them in asset hashes, and emit relative `@./...` resource paths according to current `lark-doc` and `lark-drive` guidance.
+5. Convert Mermaid to a supported native whiteboard input and formulas to supported math blocks. Convert SVG to a supported bitmap format when necessary.
+6. Escape XML/HTML-sensitive characters while preserving code and formulas verbatim.
+7. Add a read-only notice, source-file link, and source commit to continuously mirrored pages.
 
-默认把 QMD 当作静态源解析并禁止执行代码单元。只有用户明确授权且仓库代码、数据与运行环境均可信时，才在隔离环境中执行渲染代码。
+Treat QMD as static source and do not execute code cells by default. Execute them only with explicit user authorization and only when the repository code, data, and runtime are trusted and isolated.
 
-对每页同时计算正文和所有引用资源字节的稳定哈希。仅哈希 Markdown 文本会漏掉“图片内容变化但路径不变”的更新。
+Compute a stable hash from the final body plus the bytes of every referenced asset. Hashing Markdown alone misses changes to image bytes at an unchanged path.
 
-### 5. 安全执行远端写入
+### 5. Apply Remote Writes Safely
 
-- 首次创建私有空间、授权应用和创建根节点时优先显式使用 user 身份；持续 CI 使用已加入目标空间且 scope 完整的 bot 身份。
-- 在跨命令链路中始终显式延续 `--as user` 或 `--as bot`，不要依赖自动选择。
-- 使用 `lark-wiki` 创建、移动和列出节点；使用 `lark-doc` 覆盖正文；使用 `lark-drive +update-title` 原地改标题并保留节点 token。
-- 先协调节点拓扑，再写正文。开始写入前保存 `in_progress` 检查点；只有所有页面与归档操作成功后才推进成功提交 SHA。
-- 串行执行同一空间内的写操作。只对限流和临时网络错误做有上限的指数退避；对参数、权限、not found 和清单损坏立即停止。
-- 以退出码或 JSON `ok == true` 判断成功；不要按旧式顶层 `code == 0` 判断。
-- 对高风险命令遵循当前 `lark-shared` 的确认门禁；不要自动追加 `--yes`。
+- Prefer explicit user identity for initial private-space creation, application membership, and root creation. Use a bot already authorized for the target space for continuous CI.
+- Explicitly preserve `--as user` or `--as bot` throughout each token-consuming command chain. Never rely on automatic identity selection.
+- Use `lark-wiki` for node creation, movement, and listing; `lark-doc` for body overwrites; and `lark-drive +update-title` for in-place title changes that preserve node tokens.
+- Reconcile topology before writing bodies. Save an `in_progress` checkpoint before mutations, and advance the successful commit SHA only after all page and archive operations succeed.
+- Serialize writes within one Wiki space. Retry only rate limits and transient network failures with bounded exponential backoff. Stop on invalid parameters, permission failures, not-found responses, and corrupt manifests.
+- Determine success from the process exit code or JSON `ok == true`. Do not use the legacy top-level `code == 0` convention.
+- Follow the current `lark-shared` confirmation gate for high-risk commands. Never append `--yes` automatically.
 
-### 6. 实现生命周期与 CI
+### 6. Implement Lifecycle Behavior and CI
 
-- 用 Git rename 信息把旧源路径迁移到新稳定键并复用原节点；不要把重命名处理成删除加新建。
-- 默认只归档最高层失效根节点，保留其子树与历史；仅在用户明确要求并确认精确目标后删除清单拥有的节点。
-- 发现未知子节点、重复标题、清单损坏或 token/父子关系漂移时关闭失败，不猜测、不递归删除。
-- 提供本地纯转换检查、远端只读 `plan`/`dry-run`、增量应用和强制全量模式。
-- 在 CI 中锁定已验证的运行时与 `lark-cli` 版本，设置只读仓库权限、完整 Git 历史、相关路径过滤、不可取消的单并发队列和始终上传的同步报告。
-- 将 App ID/Secret 放入 GitHub Secrets，将 space/root token 放入 Variables；用 stdin 或环境变量传递 Secret，不写入参数、文件或日志。
-- 将北京时间调度显式换算为 UTC，并说明 GitHub 定时任务可能延迟。
+- Use Git rename evidence to migrate old source paths to new stable keys while reusing the original node. Never implement a rename as delete plus create.
+- Archive only the highest stale root by default, preserving its subtree and history. Delete only manifest-owned nodes after the user explicitly confirms exact targets.
+- Fail closed on unknown children, duplicate titles, manifest corruption, or token/parent drift. Never guess or recursively delete unknown content.
+- Provide local conversion checks, a remote read-only `plan` or `dry-run`, incremental apply, and forced full modes.
+- Pin tested runtime and `lark-cli` versions in CI. Use read-only repository permissions, full Git history, relevant path filters, a non-canceling single-concurrency queue, and an always-uploaded synchronization report.
+- Store App ID/Secret in GitHub Secrets and space/root tokens in Variables. Pass the Secret through stdin or environment variables, never through arguments, files, or logs.
+- Convert local schedule times explicitly to UTC and note that GitHub scheduled runs may be delayed.
 
-### 7. 测试并远端验收
+### 7. Test and Verify Remotely
 
-在写测试和交付前读取 [verification.md](references/verification.md)，按其中矩阵覆盖转换、状态机、CI 和真实飞书验收。
+Read [verification.md](references/verification.md) before writing tests and again before delivery. Cover transformations, the state machine, CI, and live Feishu acceptance.
 
-至少验证：
+At minimum, verify:
 
-- 全部预期页面各有且仅有一个受管节点，目录父子关系正确。
-- 页面标题无 Markdown 修饰符残留，正文可读取，图片已成为远端资源。
-- 每个预期内部链接指向正确的 Wiki 节点；失效或降级链接出现在报告中。
-- 知识空间保持私有，外部分享符合目标设置。
-- 无变化增量重跑为 no-op；单文件修改只更新受影响页面；图片字节变化能触发更新。
-- rename 复用 token，删除进入归档，中断后续跑不产生重复节点，失败时成功 SHA 不前移。
-- GitHub Actions 在真实 Runner 上成功，且日志没有 Secret 或 access token。
+- Every expected page has exactly one managed node with the correct parent.
+- Titles contain no leftover Markdown markers, bodies are readable, and images became remote resources.
+- Every expected internal link targets the correct Wiki node; unresolved or degraded links appear in the report.
+- The Wiki remains private and external sharing matches the target policy.
+- An unchanged incremental rerun is a no-op; one source change updates only affected pages; asset-byte changes trigger updates.
+- Renames preserve tokens, deletions enter the archive, interrupted runs resume without duplicate nodes, and failures do not advance the successful SHA.
+- GitHub Actions succeeds on a real runner and logs contain no Secret or access token.
 
-不要以“本地测试通过”代替真实远端验收，也不要只抽样就宣称全量成功。大规模导入可先抽样阻断明显错误，最终仍需用程序核对全部页面、链接和资源计数。
+Never substitute local test success for live acceptance, and never claim full success from sampling alone. Use sampling to catch early defects, then programmatically reconcile every page, link, and resource count.
 
-## 安全边界
+## Safety Boundaries
 
-- 不在代码、状态、报告、命令参数、补丁或回复中暴露 App Secret、访问令牌或用户授权码。
-- 如果密钥曾出现在聊天、终端输出或仓库历史中，完成必要修复后明确建议立即轮换。
-- 不修改与同步任务无关的源内容，不覆盖用户已有未提交修改。
-- 不删除未知或无清单所有权的节点；不把名称匹配当作所有权证明。
-- 不在未确认目标空间和删除/覆盖策略时执行批量写入。
+- Never expose App Secrets, access tokens, or authorization codes in code, state, reports, command arguments, patches, or responses.
+- If a secret appeared in chat, terminal output, or repository history, finish the necessary repair and explicitly recommend immediate rotation.
+- Do not modify unrelated source content or overwrite existing uncommitted user changes.
+- Never delete unknown nodes or nodes without manifest ownership. A matching title is not proof of ownership.
+- Do not perform batch writes before confirming the target space and deletion/overwrite policy.
 
-## 交付格式
+## Delivery Format
 
-先给出结果，再列出可验证证据：知识库链接、源提交、源页面/合成节点/辅助节点数量、资源与链接计数、测试结果、CI 运行、增量统计和残余警告。若未完成真实写入或远端验收，明确写出边界，不使用“已完成同步”。
+Lead with the result, then list verifiable evidence: Wiki URL, source commit, counts for source pages/synthetic nodes/helper nodes, asset and link counts, tests, CI run, incremental statistics, and remaining warnings. If live writes or remote acceptance did not happen, state that boundary and do not say the synchronization is complete.

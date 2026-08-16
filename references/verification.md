@@ -1,103 +1,112 @@
-# 验证与上线清单
+# Verification and Release Checklist
 
-## 本地内容测试
+## Contents
 
-覆盖以下输入并验证确定性输出：
+- Local content tests
+- State machine and fake-remote tests
+- CI checks and Feishu preflight
+- Full remote, incremental, and recovery acceptance
+- Common failure triage
+- Completion gate
 
-- frontmatter、标题优先级、强调或链接包裹的 H1、无 H1 文件。
-- `index.md` 目录主页、缺失首页的合成目录、多语言根和深层目录。
-- QMD 默认不执行代码单元；显式允许执行时验证隔离环境和产物确定性。
-- Markdown 与 HTML 图片、同路径图片字节变化、缺失资源、SVG 转换。
-- 行内公式、公式块、Mermaid、多代码围栏、表格和原始尖括号。
-- VitePress Badge/container/details 与 Quarto callout。
-- 相对链接、绝对站内链接、目录链接、扩展名省略、查询参数、标题锚点和失效目标。
-- Windows/Unix 换行、URL 编码路径、XML 转义和代码块保护。
+## Local Content Tests
 
-对同一输入运行两次，要求正文、资源列表、节点模型和 render hash 完全相同。
+Cover these inputs and assert deterministic output:
 
-## 状态机与模拟远端测试
+- Frontmatter, title precedence, H1 wrapped in emphasis or links, and files without H1.
+- Directory `index.md`, synthetic directories, language roots, and deep paths.
+- QMD with code execution disabled by default; when explicitly enabled, verify runtime isolation and deterministic artifacts.
+- Markdown and HTML images, changed bytes at the same path, missing assets, and SVG conversion.
+- Inline formulas, formula blocks, Mermaid, multiple code fences, tables, and literal angle brackets.
+- VitePress Badge/container/details and Quarto callouts.
+- Relative links, absolute internal links, directory links, omitted extensions, query strings, heading anchors, and missing targets.
+- Windows/Unix line endings, URL-encoded paths, XML escaping, and code-fence protection.
 
-使用 fake executor 或 mock `lark-cli` 覆盖：
+Run identical input twice and require identical body output, asset lists, node models, and render hashes.
 
-- 首次创建和第二次无变化 no-op。
-- 单页正文修改、仅图片修改和强制全量。
-- 标题变化、目录移动、Git rename 和跨父节点移动。
-- 删除转归档、显式物理删除、未知子节点拒绝删除。
-- API 创建成功后中断、检查点恢复和同名冲突关闭失败。
-- 清单 schema 不匹配、清单损坏、token 漂移和 revision 冲突。
-- 限流后成功、重试耗尽、权限错误不重试和失败时成功 SHA 不前移。
+## State Machine and Fake-Remote Tests
 
-断言写操作顺序符合“检查点 → 拓扑 → 正文 → 归档/删除 → 最终状态”。
+Use a fake executor or mocked `lark-cli` to cover:
 
-## CI 检查
+- Initial creation followed by an unchanged no-op.
+- One body change, an asset-only change, and forced full synchronization.
+- Title changes, directory moves, Git renames, and cross-parent moves.
+- Archive-on-delete, explicitly confirmed physical deletion, and refusal to delete unknown children.
+- Interruption after a successful create, checkpoint recovery, and fail-closed same-title conflicts.
+- Schema mismatch, corrupt manifest, token drift, and revision conflict.
+- Successful rate-limit retry, retry exhaustion, no retry for permission failures, and no successful-SHA advance after failure.
 
-- 解析 Workflow YAML，并运行可用的 action linter。
-- 锁定运行时、依赖和 `lark-cli` 版本。
-- 使用完整 Git 历史支持 rename；设置 `contents: read`。
-- 限制触发路径，提供 `workflow_dispatch` 的 plan/apply 或 incremental/full 参数。
-- 使用单一 concurrency group，设置 `cancel-in-progress: false`。
-- 在执行 CLI 前检查必需变量是否非空，但不打印值。
-- 明确 GitHub Actions 的 step/job 环境变量作用域；不要依赖某一步 shell 内的临时变量影响后续步骤。
-- 无论成功失败都上传机器可读报告，并设置合理 retention。
-- 实际运行一次真实 Runner；本地 shell 成功不能替代这一步。
+Assert this mutation order: checkpoint, topology, bodies, archive/delete, terminal state.
 
-## 飞书上线前检查
+## CI Checks
 
-1. 确认目标知识空间名称、描述、私有性和外部分享设置。
-2. 确认 user 与 bot 身份选择正确。
-3. 确认 bot 已获得所需应用 scope，并是目标空间成员/管理员。
-4. 运行本地纯转换检查。
-5. 运行远端只读 plan/dry-run，确认只包含预期动作。
-6. 首次小批量应用代表页面并核对标题、正文、图片、公式、Mermaid 和内部链接。
-7. 执行全量同步。
+- Parse workflow YAML and run an available Actions linter.
+- Pin the runtime, dependencies, and `lark-cli` version.
+- Fetch complete Git history for rename support and use `contents: read`.
+- Restrict trigger paths and expose `workflow_dispatch` plan/apply or incremental/full modes.
+- Use one concurrency group with `cancel-in-progress: false`.
+- Check required variables for non-empty values before CLI setup without printing them.
+- Define GitHub Actions environment variables at the correct step/job scope; do not expect shell-local variables from one step to reach another.
+- Upload a machine-readable report on success or failure with a sensible retention period.
+- Run the workflow on a real runner. Local-shell success does not replace this check.
 
-## 全量远端验收
+## Feishu Preflight
 
-使用程序遍历全部受管节点，不只抽样：
+1. Confirm target space name, description, privacy, and external-sharing policy.
+2. Confirm explicit user and bot identity selection.
+3. Confirm the bot has required application scopes and target-space member/admin access.
+4. Run local conversion checks.
+5. Run a remote read-only plan or dry run and confirm every proposed action.
+6. Apply a representative small batch and inspect titles, bodies, images, formulas, Mermaid, and internal links.
+7. Run the full synchronization.
 
-- 对比预期与实际 node token 集合、父 token、标题和对象类型。
-- 获取每个 Docx，检查稳定内容标记或源链接，并记录 revision。
-- 从最终转换稿提取预期 Wiki 目标集合，与远端正文链接集合逐页对比。
-- 对比预期图片出现次数与远端图片块数；必要时同时对比唯一资源数。
-- 验证公式与 Mermaid 的代表性远端块可读/可编辑。
-- 单独报告源页面、合成目录、状态页、归档页和总节点数。
-- 读取空间权限，确认私有性和外部分享状态。
+## Full Remote Acceptance
 
-## 增量与恢复验收
+Traverse every managed node programmatically rather than relying on samples:
 
-依次执行并保存报告：
+- Compare expected and actual node-token sets, parent tokens, titles, and object types.
+- Fetch every Docx, check a stable content marker or source link, and record the revision.
+- Extract expected Wiki targets from final converted bodies and compare them with remote link targets page by page.
+- Compare expected image occurrences with remote image blocks and, when useful, compare unique-resource counts separately.
+- Verify representative formula and Mermaid blocks are readable and editable remotely.
+- Report source pages, synthetic directories, status page, archive page, and total nodes separately.
+- Read space permissions and confirm privacy and external-sharing settings.
 
-1. 无变化重跑：正文 create/update/archive/delete 均为零。
-2. 修改一个页面：只更新该页及确实依赖它的生成页。
-3. 修改图片字节：引用该图片的页面被更新。
-4. 重命名文件：node token 不变，路径和标题更新。
-5. 删除测试页：进入归档或按明确策略删除，不影响未知节点。
-6. 人为中断：下次运行恢复且不产生重复节点。
-7. 注入失败：状态保持未完成，`lastSyncedCommit` 不前移。
+## Incremental and Recovery Acceptance
 
-## 常见故障定位
+Run and preserve reports for these scenarios:
 
-| 现象 | 优先检查 |
+1. Unchanged rerun: zero body create/update/archive/delete operations.
+2. One page edit: update only that page and truly dependent generated pages.
+3. Asset-byte edit: update every page referencing the asset.
+4. File rename: preserve the node token while updating path and title.
+5. Test-page deletion: archive or delete according to policy without affecting unknown nodes.
+6. Forced interruption: resume without duplicate nodes.
+7. Injected failure: retain unfinished state and do not advance `lastSyncedCommit`.
+
+## Common Failure Triage
+
+| Symptom | Check first |
 |---|---|
-| 本地成功、CI 初始化失败 | Secret 是否非空、环境变量作用域、CLI 固定版本、Shell 差异 |
-| bot 有 scope 但找不到空间 | 应用是否加入目标空间、身份是否显式为 bot、space ID 是否正确 |
-| node API not found | 是否混用了 space ID、node token、obj token 或错误身份 |
-| 标题带 `**` 或链接语法 | H1 清洗是否去除 Markdown inline 标记，是否远端逐页核对标题 |
-| 图片路径存在但未更新 | render hash 是否包含资源字节，CLI 是否使用 cwd 下相对 `@./` 路径 |
-| 站内链接仍指向仓库 | 是否在完整 node map 建立前转换，路径规范化是否覆盖目录/index |
-| 重跑产生重复节点 | 是否只靠标题认领，创建前检查点或确定性暂存标题是否缺失 |
-| 删除误伤风险 | 是否只操作清单拥有节点，是否发现未知子节点，归档是否优先 |
-| 同步很慢或频繁限流 | 是否串行写入、是否对未变化页面做哈希 skip、重试是否有上限 |
+| Local success, CI setup failure | Non-empty Secret, environment scope, pinned CLI version, shell differences |
+| Bot has scopes but cannot find space | Application membership, explicit bot identity, correct space ID |
+| Node API returns not found | Confused space ID, node token, object token, or identity |
+| Title contains `**` or link syntax | Inline Markdown stripping and page-by-page title verification |
+| Image path exists but page did not update | Asset bytes in render hash and cwd-relative `@./` paths |
+| Internal links still target repository | Complete node map before conversion and directory/index normalization |
+| Rerun creates duplicate nodes | Title-only adoption or missing create checkpoint/staging title |
+| Deletion may affect unknown content | Manifest ownership, unknown-child discovery, archive-first policy |
+| Synchronization is slow or rate-limited | Serial writes, hash-based skips, bounded retries |
 
-## 完成交付门槛
+## Completion Gate
 
-只有同时满足以下条件才宣称“已完成同步”：
+Claim completion only when all applicable conditions hold:
 
-- 本地测试与静态检查通过。
-- 全量远端节点、正文、链接和资源核对通过。
-- 私有性与权限设置核对通过。
-- 无变化增量与至少一个变更场景通过。
-- 真实 CI Runner 成功并生成同步报告。
-- 日志与仓库扫描未发现 Secret 或 token。
+- Local tests and static checks pass.
+- Full remote node, body, link, and asset reconciliation passes.
+- Privacy and permissions pass.
+- An unchanged incremental run and at least one changed-content scenario pass.
+- A real CI runner succeeds and produces a synchronization report.
+- Repository and log scans reveal no Secret or token.
 
-若用户只要求一次性本地导入且明确不要 CI，可省略 CI 条目，但仍保留全量远端验收和可恢复本地状态。
+For an explicitly one-time import without CI, omit only the CI condition. Keep full remote acceptance and resumable local state.

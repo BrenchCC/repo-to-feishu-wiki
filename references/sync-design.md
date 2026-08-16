@@ -1,18 +1,18 @@
-# 持续同步设计
+# Continuous Synchronization Design
 
-## 经验压缩
+## Distilled Lessons
 
-三类真实任务给出以下硬约束：
+Three production-shaped tasks established these hard requirements:
 
-- 一次性教材导入在远端逐页验收时发现了强调符号包裹 H1 导致的标题污染；只检查正文写入成功不够，必须核对标题、层级、资源和链接。
-- 双语定时镜像在本地全部通过后，仍在真实 CI Runner 暴露环境变量作用域和“Secret 名称存在但值为空”的问题；必须实际运行工作流并检查非空注入。
-- 大规模增量镜像通过正文加资源哈希实现全量 no-op；单独哈希 Markdown 无法感知同路径图片字节变化。
+- A one-time book import exposed an H1 wrapped in emphasis markers only during page-by-page remote verification. A successful body write is insufficient; verify titles, hierarchy, assets, and links.
+- A scheduled bilingual mirror passed all local checks but still exposed environment-scope and empty-Secret failures on a real CI runner. Execute the workflow and verify non-empty injection without printing values.
+- A large incremental mirror achieved a complete no-op through body-plus-asset hashes. Markdown-only hashes cannot detect changed bytes at an unchanged image path.
 
-因此，把远端全量验收、真实 CI 闭环、资源哈希和可恢复状态视为功能本身，而不是上线后的附加项。
+Treat full remote acceptance, real CI closure, asset hashing, and recoverable state as product features rather than post-launch extras.
 
-## 状态清单
+## State Manifest
 
-使用版本化、机器可读的清单。可放在专用状态页，也可放在根首页的明确围栏中；状态页更易隔离人工内容。
+Use a versioned, machine-readable manifest. Store it in a dedicated status page or a clearly delimited root-page block; a dedicated page better isolates human content.
 
 ```json
 {
@@ -36,62 +36,58 @@
 }
 ```
 
-把稳定键、父键、node/object token、标题、源路径、渲染哈希、revision 和最后成功提交视为最小集合。不要保存密钥。
+Treat stable key, parent key, node/object tokens, title, source path, render hash, revision, and last successful commit as the minimum state. Never store secrets.
 
-## 同步状态机
+## Synchronization State Machine
 
-1. 构建期望内容树，验证稳定键唯一、父节点存在和源资源可读。
-2. 发现远端树与清单，验证 schema、space ID、token、对象类型和父子关系。
-3. 计算只读计划：create、recover、move、rename、update、archive/delete、skip。
-4. 写入 `in_progress`、`targetCommit` 和可恢复创建信息。
-5. 按父节点优先顺序创建或恢复节点，保存全部 token。
-6. 原地移动和重命名节点，重新验证拓扑。
-7. 在完整 node map 上转换链接和资源，计算 render hash。
-8. 仅覆盖新增、强制全量、哈希变化或远端 revision 漂移的正文。
-9. 归档最高层失效根；若明确选择删除，则按最深层优先且只删除清单拥有、无未知子节点的节点。
-10. 核对远端结果，最后写入 `status = idle/complete` 和 `lastSyncedCommit`。
+1. Build the desired content tree and validate unique keys, existing parents, and readable source assets.
+2. Discover the remote tree and manifest; validate schema, space ID, tokens, object types, and parent relationships.
+3. Compute a read-only plan: create, recover, move, rename, update, archive/delete, or skip.
+4. Persist `in_progress`, `targetCommit`, and recoverable create metadata.
+5. Create or recover nodes parent-first and persist every token.
+6. Move and rename nodes in place, then revalidate topology.
+7. Transform links and assets against the complete node map and compute render hashes.
+8. Overwrite only new, forced-full, hash-changed, or revision-drifted bodies.
+9. Archive the highest stale roots. If deletion is explicitly selected, delete deepest-first and only when the manifest owns the node and no unknown children exist.
+10. Reconcile remote results, then persist the chosen terminal status and `lastSyncedCommit`.
 
-任何步骤失败时保留 `in_progress` 与旧的 `lastSyncedCommit`，让下一次运行能识别未完成任务。
+On any failure, retain `in_progress` and the previous `lastSyncedCommit` so the next run can identify unfinished work. Choose one terminal status value, such as `idle` or `complete`, and use it consistently within an implementation.
 
-## 创建与中断恢复
+## Create Recovery
 
-创建节点存在“远端成功、本地状态写入前崩溃”的窗口。使用以下任一方案缩小窗口：
+Node creation has a window where the remote call succeeds before state persistence. Use either strategy:
 
-- 创建前记录唯一 `pendingCreateKey`，恢复时只认领精确父节点、精确暂存标题且与该 key 对应的节点。
-- 使用包含稳定键短哈希的确定性暂存标题创建，批量记录 token 后再改成最终标题。
+- Persist a unique `pendingCreateKey` before creation. Recover only an exact parent plus exact staging title associated with that key.
+- Create with a deterministic staging title containing a short stable-key hash, checkpoint all tokens, then rename to final titles.
 
-禁止仅凭最终标题认领同名节点。发现多个候选时停止并输出冲突。
+Never claim a same-title node by final title alone. Stop and report a conflict when multiple candidates exist.
 
-## 路径移动与删除
+## Moves and Deletions
 
-- 使用 `git diff --name-status -M <last>..<current>` 等 Git rename 证据迁移状态，保留 node token 与历史。
-- 缺少完整 Git 历史时，不猜测 rename；输出删除/创建风险并要求全量历史或显式映射。
-- 默认将失效内容移动到“归档”辅助节点并加上来源提交信息。
-- 只归档失效集合中没有失效祖先的最高层根，避免重复移动整棵子树。
-- 对物理删除采用相反顺序：先处理最深叶子，并拒绝删除含未知子节点的受管父节点。
+- Use Git rename evidence such as `git diff --name-status -M <last>..<current>` to migrate state while preserving node tokens and history.
+- Without complete Git history, do not guess a rename. Report delete/create risk and require full history or an explicit mapping.
+- Move stale content to a dedicated archive node by default and attach its source commit.
+- Archive only stale roots that have no stale ancestor, avoiding repeated movement of one subtree.
+- For physical deletion, reverse the order: process deepest leaves first and reject a managed parent containing unknown children.
 
-## 渲染哈希
+## Render Hash
 
-将以下内容按稳定顺序输入 SHA-256：
+Feed these values into SHA-256 in stable order:
 
-1. 转换器/schema 版本。
-2. 规范化换行后的最终正文。
-3. 每个本地资源的规范化相对路径。
-4. 每个资源的字节哈希。
-5. 影响输出的页面元数据与已解析链接目标。
+1. Converter or schema version.
+2. Final body with normalized line endings.
+3. Normalized relative path of each local asset.
+4. Byte hash of each asset.
+5. Output-affecting page metadata and resolved link targets.
 
-资源顺序必须稳定。不要纳入临时目录绝对路径、时间戳或随机值，否则无变化运行无法成为 no-op。
+Sort assets deterministically. Exclude temporary absolute paths, timestamps, and randomness, or an unchanged run cannot become a no-op.
 
-## 写入与并发
+## Writes, Concurrency, Identity, and Ownership
 
-- 在同一知识空间内串行创建、移动、改名和正文覆盖；优先稳定性而非吞吐。
-- 对限流、网关和临时网络错误做有上限的指数退避，并记录重试次数。
-- 对 `invalid_parameters`、`not_found`、`permission_denied`、revision 冲突和清单损坏停止并分类报告。
-- 对 revision 漂移：单向镜像按计划明确覆盖；若用户要求双向同步，停止并重新定义冲突模型，本 Skill 不默认实现双向合并。
-
-## 身份与所有权
-
-- 使用 user 身份创建私有空间、根节点并把应用以 app ID 加入空间。
-- 使用 bot 身份执行 CI，并在每条消费 bot 获取 token 的命令中显式延续 bot 身份。
-- 分别验证应用 scope 和目标空间成员/管理员 ACL；一个通过不能证明另一个通过。
-- 更换 App ID 或目标空间时按新部署处理，不复制旧空间清单到新空间。
+- Serialize creates, moves, title updates, and body overwrites within one Wiki space.
+- Apply bounded exponential backoff only to rate limits, gateways, and transient network failures.
+- Stop and classify invalid parameters, not-found responses, permission failures, revision conflicts, and manifest corruption.
+- For revision drift, explicitly overwrite in a one-way mirror. If the user requests bidirectional synchronization, stop and define a new conflict model; this skill does not default to bidirectional merging.
+- Use user identity to create a private space and root, then add the application by App ID. Use bot identity for CI and explicitly preserve that identity on every command consuming bot-derived tokens.
+- Validate application scopes and target-space membership/admin ACL independently. Passing one check does not prove the other.
+- Treat a changed App ID or target space as a new deployment. Do not copy an old-space manifest into a new space.
