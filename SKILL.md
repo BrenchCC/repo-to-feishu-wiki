@@ -124,3 +124,27 @@ Never substitute local test success for live acceptance, and never claim full su
 ## Delivery Format
 
 Lead with the result, then list verifiable evidence: Wiki URL, source commit, counts for source pages/synthetic nodes/helper nodes, asset and link counts, tests, CI run, incremental statistics, and remaining warnings. If live writes or remote acceptance did not happen, state that boundary and do not say the synchronization is complete.
+
+## User-Learned Best Practices & Constraints
+
+> **Auto-Generated Section**: This section is maintained by `skill-evolution-manager`. Do not edit manually.
+
+### User Preferences
+- 当源站使用多语言侧边栏且用户要求独立维护时，将每种语言建模为同一知识空间中的独立一级 Wiki 文档，并优先保留既有语言根节点 token。
+- 知识空间与根文档简介应聚焦内容用途；同步、覆盖与控制信息放在正文末尾来源引用或系统控制页，不占用内容简介。
+- 持续镜像的日常内容同步默认使用 incremental；full 用于首次播种拓扑签名、拓扑变更后的协调或定期完整审计，不应把提高超时时间当作加速方案。
+
+### Known Fixes & Workarounds
+- VitePress 目录顺序应只从 sidebar 数组提取，不能混入 nav；目录节点以自身或后代页面在 sidebar 中的首次出现位置排序，未列出页面稳定追加到末尾。
+- 飞书移动节点 API 没有同级位置参数；需要重排时，只移动清单归属且不在可保留前缀中的节点到安全暂存节点，再按目标顺序移回，并逐父节点校验完整 token 序列；出现未知节点立即失败关闭。
+- 状态清单必须强制 node_token 唯一归属。多个同名 index 目录可能误领同一节点；应释放重复映射、为 token 预留唯一 stable key、创建缺失目录并将已有子节点移回正确父节点。
+- 临时暂存中断后，恢复逻辑必须核对远端实际父节点成员关系，不能只比较状态清单中的 parentKey。
+- 独立语言根迁到知识空间根级时，把状态页和归档页收纳到主语言根下的系统节点，避免污染面向读者的侧边栏顺序。
+- 同步耗时异常时，先按执行日志的时间戳和 action 分类量化瓶颈，区分正文覆盖、节点移动与无写入时仍发生的串行层级读取；大量 move 通常是一次性重排成本，而无更新仍耗时通常说明全树扫描是瓶颈。
+- 大型 Wiki 的内容增量可在清单中持久化版本化拓扑签名；签名至少覆盖 stable key、parent key、标题、source path、synthetic 标记与 sidebar 顺序。仅当 incremental、状态为 idle、已有成功 commit、签名一致、node/obj token 映射完整且 node_token 唯一、根节点和系统辅助节点匹配时，才跳过远端全树快照、拓扑协调与同级排序。
+- 拓扑快速路径必须失败关闭：旧状态缺少签名、上次同步中断、映射缺失或重复、根节点异常、页面增删/重命名/移动、标题或 sidebar 顺序变化，以及 full 模式，均自动回退完整拓扑校验；首次升级应完整协调一次，成功后再写入签名。
+- 快速路径仍须在正文写入前持久化 in_progress 与 targetCommit，正文写入保持同一 Wiki 空间内串行；失败时不得推进 lastSyncedCommit，下次因非 idle 状态自动完整恢复。只读层级查询可做有界并发，但不能用并发写入换速度。
+
+### Custom Instruction Injection
+
+处理多语言 VitePress 仓库时，先盘点 sidebar 顺序、语言根边界、远端实际父子关系与 node_token 唯一性；预览创建、拆分、移动和重排数量并取得确认后再写入。简介保持内容导向，控制元数据收纳在系统页或页尾。对大型持续镜像先从执行日志量化读取、移动与正文写入成本；日常 incremental 在严格校验拓扑签名和 token 清单后走内容快速路径，任何状态、拓扑或映射异常立即回退完整协调。写操作保持串行且先写 in_progress 检查点，成功后才推进 lastSyncedCommit。
