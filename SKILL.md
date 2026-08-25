@@ -144,7 +144,11 @@ Lead with the result, then list verifiable evidence: Wiki URL, source commit, co
 - 大型 Wiki 的内容增量可在清单中持久化版本化拓扑签名；签名至少覆盖 stable key、parent key、标题、source path、synthetic 标记与 sidebar 顺序。仅当 incremental、状态为 idle、已有成功 commit、签名一致、node/obj token 映射完整且 node_token 唯一、根节点和系统辅助节点匹配时，才跳过远端全树快照、拓扑协调与同级排序。
 - 拓扑快速路径必须失败关闭：旧状态缺少签名、上次同步中断、映射缺失或重复、根节点异常、页面增删/重命名/移动、标题或 sidebar 顺序变化，以及 full 模式，均自动回退完整拓扑校验；首次升级应完整协调一次，成功后再写入签名。
 - 快速路径仍须在正文写入前持久化 in_progress 与 targetCommit，正文写入保持同一 Wiki 空间内串行；失败时不得推进 lastSyncedCommit，下次因非 idle 状态自动完整恢复。只读层级查询可做有界并发，但不能用并发写入换速度。
+- 飞书 Markdown 公式不能沿用 XML `<latex>...</latex>` 包装或额外转义反斜杠；转换层应输出飞书原生 `$$...$$` 公式块，并让源 LaTeX 在进入公式归一化前保持原样。
+- 飞书 Markdown 转换会移除 `\text{...}` 和 `\texttt{...}` 内容中的 `\_` 转义，导致 `hidden_size` 等公式失效；上传前应在这些命令内部把 `\_` 归一化为 `\textunderscore{}`，并保留真实失败公式作为回归测试。
+- 公式兼容性不能只靠抽样或本地 KaTeX 解析判断；应扫描全部待同步文档，对转换后的每个公式执行严格解析，再对代表性高风险公式做飞书写入与回读，确认公式告警为零且回读内容未被再次改写。
+- 当同步测试新增 KaTeX 等直接导入的 Node 包时，必须同时更新 `devDependencies` 与 lockfile，并确保 GitHub Actions 在测试前执行 `npm ci`；`actions/setup-node` 只配置运行时与缓存，不会安装依赖。
 
 ### Custom Instruction Injection
 
-处理多语言 VitePress 仓库时，先盘点 sidebar 顺序、语言根边界、远端实际父子关系与 node_token 唯一性；预览创建、拆分、移动和重排数量并取得确认后再写入。简介保持内容导向，控制元数据收纳在系统页或页尾。对大型持续镜像先从执行日志量化读取、移动与正文写入成本；日常 incremental 在严格校验拓扑签名和 token 清单后走内容快速路径，任何状态、拓扑或映射异常立即回退完整协调。写操作保持串行且先写 in_progress 检查点，成功后才推进 lastSyncedCommit。
+处理多语言 VitePress 仓库时，先盘点 sidebar 顺序、语言根边界、远端实际父子关系与 node_token 唯一性；预览创建、拆分、移动和重排数量并取得确认后再写入。简介保持内容导向，控制元数据收纳在系统页或页尾。对大型持续镜像先从执行日志量化读取、移动与正文写入成本；日常 incremental 在严格校验拓扑签名和 token 清单后走内容快速路径，任何状态、拓扑或映射异常立即回退完整协调。写操作保持串行且先写 in_progress 检查点，成功后才推进 lastSyncedCommit。公式转换应以飞书实际 Markdown 解析行为为准：输出原生公式块，在 `\text{}`/`\texttt{}` 内将 `\_` 归一化为 `\textunderscore{}`，用全量严格解析和代表性远端写入回读共同验收。新增测试依赖时同步更新清单与 lockfile，并保证 CI 在运行测试前完成干净安装。
