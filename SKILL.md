@@ -148,6 +148,8 @@ Lead with the result, then list verifiable evidence: Wiki URL, source commit, co
 - 飞书 Markdown 转换会移除 `\text{...}` 和 `\texttt{...}` 内容中的 `\_` 转义，导致 `hidden_size` 等公式失效；上传前应在这些命令内部把 `\_` 归一化为 `\textunderscore{}`，并保留真实失败公式作为回归测试。
 - 公式兼容性不能只靠抽样或本地 KaTeX 解析判断；应扫描全部待同步文档，对转换后的每个公式执行严格解析，再对代表性高风险公式做飞书写入与回读，确认公式告警为零且回读内容未被再次改写。
 - 当同步测试新增 KaTeX 等直接导入的 Node 包时，必须同时更新 `devDependencies` 与 lockfile，并确保 GitHub Actions 在测试前执行 `npm ci`；`actions/setup-node` 只配置运行时与缓存，不会安装依赖。
+- 飞书公式载体必须以当前已安装 lark-doc 对目标 doc-format 的参考为准，不能沿用历史的“Markdown 一律使用 $$”或“XML 一律不可用”结论；若当前 Markdown 导入允许内嵌 XML，且 lark-doc XML 参考将 <latex>...</latex> 列为公式标签，display math 应输出独立的 <latex> 块，并对公式正文做 XML 转义。
+- 修复公式兼容性时，应保留 Quarto 源文件的原生 display math；仅在飞书转换层选择当前受支持的载体。对每个新增公式规则加入转换回归测试，并检查实际生成的飞书写入文本；对于比较符等高风险符号，优先采用等价且不含歧义符号的数学记法。
 
 ### Custom Instruction Injection
 
