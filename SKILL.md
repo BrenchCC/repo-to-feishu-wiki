@@ -150,6 +150,7 @@ Lead with the result, then list verifiable evidence: Wiki URL, source commit, co
 - 当同步测试新增 KaTeX 等直接导入的 Node 包时，必须同时更新 `devDependencies` 与 lockfile，并确保 GitHub Actions 在测试前执行 `npm ci`；`actions/setup-node` 只配置运行时与缓存，不会安装依赖。
 - 飞书公式载体必须以当前已安装 lark-doc 对目标 doc-format 的参考为准，不能沿用历史的“Markdown 一律使用 $$”或“XML 一律不可用”结论；若当前 Markdown 导入允许内嵌 XML，且 lark-doc XML 参考将 <latex>...</latex> 列为公式标签，display math 应输出独立的 <latex> 块，并对公式正文做 XML 转义。
 - 修复公式兼容性时，应保留 Quarto 源文件的原生 display math；仅在飞书转换层选择当前受支持的载体。对每个新增公式规则加入转换回归测试，并检查实际生成的飞书写入文本；对于比较符等高风险符号，优先采用等价且不含歧义符号的数学记法。
+- 当当前飞书转换路径使用 <latex>…</latex> 时，公式正文不可做 XML 转义：飞书会把 &amp; 原样交给 LaTeX，破坏 aligned 环境的 &。写入前应将公式内的换行及周围空白规整为单个空格，防止 \mid 与下一行变量粘连为未定义命令 \midp；此规则覆盖此前“对 <latex> 正文做 XML 转义”的经验。
 
 ### Custom Instruction Injection
 
