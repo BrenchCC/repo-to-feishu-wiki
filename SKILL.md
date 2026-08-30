@@ -133,6 +133,9 @@ Lead with the result, then list verifiable evidence: Wiki URL, source commit, co
 - 当源站使用多语言侧边栏且用户要求独立维护时，将每种语言建模为同一知识空间中的独立一级 Wiki 文档，并优先保留既有语言根节点 token。
 - 知识空间与根文档简介应聚焦内容用途；同步、覆盖与控制信息放在正文末尾来源引用或系统控制页，不占用内容简介。
 - 持续镜像的日常内容同步默认使用 incremental；full 用于首次播种拓扑签名、拓扑变更后的协调或定期完整审计，不应把提高超时时间当作加速方案。
+- 持续镜像的页面级只读声明、源文件链接和源 commit SHA 必须作为显式可选策略在实施前确认；用户选择干净正文时，控制与溯源元数据只保存在系统状态页，不得强制注入每页正文。
+- 当用户希望自己的提交立即触发同步时，在定时和手动触发之外，为目标分支配置仅覆盖内容源、子模块指针、转换器、同步 CLI、依赖与工作流的 push paths；无关文档或业务代码默认不消耗同步 Runner。
+- 持续镜像项目交付时应提供仓库 README，说明内容范围、架构、环境、命令、Secrets 与 Variables、全部触发方式、自动提交格式、报告位置和安全边界，且不写入真实凭据。
 
 ### Known Fixes & Workarounds
 - VitePress 目录顺序应只从 sidebar 数组提取，不能混入 nav；目录节点以自身或后代页面在 sidebar 中的首次出现位置排序，未列出页面稳定追加到末尾。
@@ -151,7 +154,14 @@ Lead with the result, then list verifiable evidence: Wiki URL, source commit, co
 - 飞书公式载体必须以当前已安装 lark-doc 对目标 doc-format 的参考为准，不能沿用历史的“Markdown 一律使用 $$”或“XML 一律不可用”结论；若当前 Markdown 导入允许内嵌 XML，且 lark-doc XML 参考将 <latex>...</latex> 列为公式标签，display math 应输出独立的 <latex> 块，并对公式正文做 XML 转义。
 - 修复公式兼容性时，应保留 Quarto 源文件的原生 display math；仅在飞书转换层选择当前受支持的载体。对每个新增公式规则加入转换回归测试，并检查实际生成的飞书写入文本；对于比较符等高风险符号，优先采用等价且不含歧义符号的数学记法。
 - 当当前飞书转换路径使用 <latex>…</latex> 时，公式正文不可做 XML 转义：飞书会把 &amp; 原样交给 LaTeX，破坏 aligned 环境的 &。写入前应将公式内的换行及周围空白规整为单个空格，防止 \mid 与下一行变量粘连为未定义命令 \midp；此规则覆盖此前“对 <latex> 正文做 XML 转义”的经验。
+- 任何影响最终正文的渲染策略变更，例如启用或移除页尾元数据，都必须提升 converter version 或将策略值纳入 render hash，确保现有页面被可靠更新；同时增加正文中存在或不存在该元素的回归断言。
+- 远端 verify 不得依赖每页可见的来源链接、同步声明或 commit marker；当用户关闭可见元数据时，应通过清单 token、期望正文或哈希、层级、标题、链接和资源进行全量核对，控制标记仅保留在系统状态页。
+- GitHub Actions 事件路由应明确区分：pull_request 只读校验，schedule 与相关路径 push 默认 incremental apply，workflow_dispatch 才读取 plan/apply/verify 和 incremental/full 输入；push 路径至少覆盖源内容或 gitlink、转换器、同步 CLI、依赖、测试、工作流与 .gitmodules。
+- 同步报告应在 Secret 非空校验、CLI 安装和上游 fetch 之前初始化，使配置或环境失败也能由 always() 上传机器可读报告；最终报告再覆盖为真实父仓库 SHA、上游 SHA、操作计数和告警。
+- 全站渲染策略迁移先执行只读 plan，要求计划仅包含预期正文更新且无意外创建、移动、重命名或归档；随后 apply、全量 verify，并由真实 push Runner 再执行一次无变化 incremental，确认零写入和报告上传。
+- 对 README 徽章等远端图片，飞书服务端抓取可能超时；除非明确要求镜像远端资源，否则将其降级为可点击链接，仅上传仓库内已验证且纳入字节哈希的本地图片。
+- 自动更新子模块的提交信息应使用确定性的 Conventional Commit 模板，并在正文记录旧、新上游短 SHA；人工实现提交与 Skill 演进提交则分别读取各仓库真实 staged diff 生成候选，避免跨仓库混合提交。
 
 ### Custom Instruction Injection
 
-处理多语言 VitePress 仓库时，先盘点 sidebar 顺序、语言根边界、远端实际父子关系与 node_token 唯一性；预览创建、拆分、移动和重排数量并取得确认后再写入。简介保持内容导向，控制元数据收纳在系统页或页尾。对大型持续镜像先从执行日志量化读取、移动与正文写入成本；日常 incremental 在严格校验拓扑签名和 token 清单后走内容快速路径，任何状态、拓扑或映射异常立即回退完整协调。写操作保持串行且先写 in_progress 检查点，成功后才推进 lastSyncedCommit。公式转换应以飞书实际 Markdown 解析行为为准：输出原生公式块，在 `\text{}`/`\texttt{}` 内将 `\_` 归一化为 `\textunderscore{}`，用全量严格解析和代表性远端写入回读共同验收。新增测试依赖时同步更新清单与 lockfile，并保证 CI 在运行测试前完成干净安装。
+处理多语言 VitePress 仓库时，先盘点 sidebar 顺序、语言根边界、远端实际父子关系与 node_token 唯一性；预览创建、拆分、移动和重排数量并取得确认后再写入。实施前单独确认页面级同步声明、源链接与 commit SHA 是启用还是关闭；关闭时把控制元数据只放入系统状态页，并让 verify 不依赖可见 marker。对大型持续镜像先从执行日志量化读取、移动与正文写入成本；日常 incremental 在严格校验拓扑签名和 token 清单后走内容快速路径，任何状态、拓扑或映射异常立即回退完整协调。任何正文渲染策略变化都提升 converter version 或将策略纳入 hash，并执行 plan → apply → 全量 verify → 真实 Runner no-op。GitHub Actions 明确区分 PR 只读、定时或相关路径 push 增量写入、手动可选操作与模式，并在所有可能失败的步骤前初始化报告。写操作保持串行且先写 in_progress，成功后才推进 lastSyncedCommit。公式与资源转换以当前 lark-doc 参考和远端回读为准；本地图片纳入字节哈希，远端徽章默认降级为链接。新增测试依赖时同步更新清单与 lockfile，并保证 CI 先完成干净安装。交付持续镜像时补齐不含凭据的项目 README，并对项目仓库与 Skill 仓库分别基于 staged diff 提交。
